@@ -2,7 +2,7 @@
 
 BROCCOLI_GIT_DIRECTORY=`git rev-parse --show-toplevel`
 
-OPENCL_DIRECTORY=/usr/local/cuda-5.5/include/CL #Containing opencl.h
+OPENCL_DIRECTORY=/usr/include/CL #Containing opencl.h
 # OPENCL_DIRECTORY=/opt/AMDAPP/include/CL # For AMD OpenCL package
 # OPENCL_DIRECTORY2=/opt/AMDAPP/include # For AMD OpenCL package
 
