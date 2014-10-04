@@ -1,5 +1,5 @@
 /*
- * BROCCOLI: An open source multi-platform software for parallel analysis of fMRI data on many core CPUs and GPUS
+ * BROCCOLI: Software for Fast fMRI Analysis on Many-Core CPUs and GPUs
  * Copyright (C) <2013>  Anders Eklund, andek034@gmail.com
  *
  * This program is free software: you can redistribute it and/or modify
@@ -295,9 +295,7 @@ int main(int argc, char **argv)
     bool            WRITE_DISPLACEMENT_FIELD = false;
 	bool			WRITE_INTERPOLATED = false;
    	bool			CHANGE_OUTPUT_NAME = false;    
-	float			TSIGMA = 5.0f;
-	float			ESIGMA = 5.0f;
-	float			DSIGMA = 5.0f;
+	float			SIGMA = 5.0f;
 	bool			MASK = false;
 	const char* 	MASK_NAME;
 
@@ -340,7 +338,7 @@ int main(int argc, char **argv)
         printf(" -device                    The OpenCL device to use for the specificed platform (default 0) \n");
         printf(" -iterationslinear          Number of iterations for the linear registration (default 10) \n");        
         printf(" -iterationsnonlinear       Number of iterations for the non-linear registration (default 10), 0 means that no non-linear registration is performed \n");        
-        printf(" -lowestscale               The lowest scale for the linear and non-linear registration, should be 1, 2, 4 or 8 (default 4), x means downsampling a factor x in each dimension  \n");        
+        //printf(" -lowestscale               The lowest scale for the linear and non-linear registration, should be 1, 2, 4 or 8 (default 4), x means downsampling a factor x in each dimension  \n");        
 		/*
         printf(" -starttransx               Transformation in x direction to be applied before registration, in voxels (default 0) \n");
         printf(" -starttransy               Transformation in y direction to be applied before registration, in voxels (default 0) \n");
@@ -357,9 +355,7 @@ int main(int argc, char **argv)
         printf(" -endrotz               	Rotation around z-axis to be applied after registration, in degrees (default 0) \n");
 		*/
 
-        printf(" -tsigma                    Amount of Gaussian smoothing applied to the estimated tensor components, defined as sigma of the Gaussian kernel (default 5.0)  \n");        
-        printf(" -esigma                    Amount of Gaussian smoothing applied to the equation systems (one in each voxel), defined as sigma of the Gaussian kernel (default 5.0)  \n");        
-        printf(" -dsigma                    Amount of Gaussian smoothing applied to the displacement fields (x,y,z), defined as sigma of the Gaussian kernel (default 5.0)  \n");        
+        printf(" -sigma                     Amount of Gaussian smoothing applied for regularization of the displacement field, defined as sigma of the Gaussian kernel (default 5.0)  \n");        
         printf(" -zcut                      Number of mm to cut from the bottom of the input volume, can be negative, useful if the head in the volume is placed very high or low (default 0) \n");        
         printf(" -mask                      Mask to apply after linear and non-linear registration, to for example do a skullstrip (default none) \n");        
 		printf(" -savefield                 Saves the displacement field to file (default false) \n");        
@@ -493,6 +489,7 @@ int main(int argc, char **argv)
             }
             i += 2;
         }
+		/*
         else if (strcmp(input,"-lowestscale") == 0)
         {
 			if ( (i+1) >= argc  )
@@ -515,68 +512,25 @@ int main(int argc, char **argv)
             }
             i += 2;
         }
-        else if (strcmp(input,"-tsigma") == 0)
+		*/
+        else if (strcmp(input,"-sigma") == 0)
         {
 			if ( (i+1) >= argc  )
 			{
-			    printf("Unable to read value after -tsigma !\n");
+			    printf("Unable to read value after -sigma !\n");
                 return EXIT_FAILURE;
 			}
 
-            TSIGMA = strtod(argv[i+1], &p);
+            SIGMA = (float)strtod(argv[i+1], &p);
 
 			if (!isspace(*p) && *p != 0)
 		    {
-		        printf("tsigma must be a float! You provided %s \n",argv[i+1]);
+		        printf("sigma must be a float! You provided %s \n",argv[i+1]);
 				return EXIT_FAILURE;
 		    }
-  			else if ( TSIGMA < 0.0f )
+  			else if ( SIGMA < 0.0f )
             {
-                printf("tsigma must be >= 0.0 !\n");
-                return EXIT_FAILURE;
-            }
-            i += 2;
-        }
-        else if (strcmp(input,"-esigma") == 0)
-        {
-			if ( (i+1) >= argc  )
-			{
-			    printf("Unable to read value after -esigma !\n");
-                return EXIT_FAILURE;
-			}
-
-            ESIGMA = (float)strtod(argv[i+1], &p);
-
-			if (!isspace(*p) && *p != 0)
-		    {
-		        printf("esigma must be a float! You provided %s \n",argv[i+1]);
-				return EXIT_FAILURE;
-		    }
-  			else if ( ESIGMA < 0.0f )
-            {
-                printf("esigma must be >= 0.0 !\n");
-                return EXIT_FAILURE;
-            }
-            i += 2;
-        }
-        else if (strcmp(input,"-dsigma") == 0)
-        {
-			if ( (i+1) >= argc  )
-			{
-			    printf("Unable to read value after -dsigma !\n");
-                return EXIT_FAILURE;
-			}
-
-            DSIGMA = (float)strtod(argv[i+1], &p);
-
-			if (!isspace(*p) && *p != 0)
-		    {
-		        printf("dsigma must be a float! You provided %s \n",argv[i+1]);
-				return EXIT_FAILURE;
-		    }
-  			else if ( DSIGMA < 0.0f )
-            {
-                printf("dsigma must be >= 0.0 !\n");
+                printf("sigma must be >= 0.0 !\n");
                 return EXIT_FAILURE;
             }
             i += 2;
@@ -942,10 +896,27 @@ int main(int argc, char **argv)
     MNI_VOXEL_SIZE_Y = inputMNI->dy;
     MNI_VOXEL_SIZE_Z = inputMNI->dz;
     
-    if ( (MNI_VOXEL_SIZE_X == 2.0f) && (COARSEST_SCALE == 8) )
-    {
-        printf("\n\nWARNING: It is not recommended to use 8 as a lowest scale for a 2 mm reference volume.\n\n");   
-    }
+	// The filter size is 7, so select a lowest scale that gives at least 10 valid samples (3 data points are lost on each side in each dimension, i.e. 6 total)
+	if ( (MNI_DATA_W/16 >= 16) && (MNI_DATA_H/16 >= 16) && (MNI_DATA_D/16 >= 16) )
+	{
+		COARSEST_SCALE = 16;
+	}
+	else if ( (MNI_DATA_W/8 >= 16) && (MNI_DATA_H/8 >= 16) && (MNI_DATA_D/8 >= 16) )
+	{
+		COARSEST_SCALE = 8;
+	}
+	else if ( (MNI_DATA_W/4 >= 16) && (MNI_DATA_H/4 >= 16) && (MNI_DATA_D/4 >= 16) )
+	{
+		COARSEST_SCALE = 4;
+	}
+	else if ( (MNI_DATA_W/2 >= 16) && (MNI_DATA_H/2 >= 16) && (MNI_DATA_D/2 >= 16) )
+	{
+		COARSEST_SCALE = 2;
+	}
+	else
+	{
+		COARSEST_SCALE = 1;
+	}
     
 	// Check  if mask has same dimensions as reference volume
 	if (MASK)
@@ -992,7 +963,11 @@ int main(int argc, char **argv)
         printf("Volume 2 size: %i x %i x %i \n",  MNI_DATA_W, MNI_DATA_H, MNI_DATA_D);
         printf("Volume 2 voxel size: %f x %f x %f mm \n", MNI_VOXEL_SIZE_X, MNI_VOXEL_SIZE_Y, MNI_VOXEL_SIZE_Z);    
     }
-            
+   	if (VERBOS)
+ 	{
+		printf("Selected lowest scale %i for the registration \n",COARSEST_SCALE);
+	}
+        
     // ------------------------------------------------
     
     // Allocate memory on the host
@@ -1202,7 +1177,7 @@ int main(int argc, char **argv)
 
 	startTime = GetWallTime();
     
-    // Read quadrature filters for Linear registration, three real valued and three imaginary valued
+    // Read quadrature filters for linear registration, three real valued and three imaginary valued
 	ReadBinaryFile(h_Quadrature_Filter_1_Linear_Registration_Real,IMAGE_REGISTRATION_FILTER_SIZE*IMAGE_REGISTRATION_FILTER_SIZE*IMAGE_REGISTRATION_FILTER_SIZE,"filter1_real_linear_registration.bin",allMemoryPointers,numberOfMemoryPointers,allNiftiImages,numberOfNiftiImages); 
 	ReadBinaryFile(h_Quadrature_Filter_1_Linear_Registration_Imag,IMAGE_REGISTRATION_FILTER_SIZE*IMAGE_REGISTRATION_FILTER_SIZE*IMAGE_REGISTRATION_FILTER_SIZE,"filter1_imag_linear_registration.bin",allMemoryPointers,numberOfMemoryPointers,allNiftiImages,numberOfNiftiImages); 
 	ReadBinaryFile(h_Quadrature_Filter_2_Linear_Registration_Real,IMAGE_REGISTRATION_FILTER_SIZE*IMAGE_REGISTRATION_FILTER_SIZE*IMAGE_REGISTRATION_FILTER_SIZE,"filter2_real_linear_registration.bin",allMemoryPointers,numberOfMemoryPointers,allNiftiImages,numberOfNiftiImages); 
@@ -1270,7 +1245,7 @@ int main(int argc, char **argv)
         {
             if (createKernelErrors[i] != 0)
             {
-                printf("Create kernel error %i is %s \n",i,BROCCOLI.GetOpenCLErrorMessage(createKernelErrors[i]));
+                printf("Create kernel error for kernel '%s' is '%s' \n",BROCCOLI.GetOpenCLKernelName(i),BROCCOLI.GetOpenCLErrorMessage(createKernelErrors[i]));
             }
         } 
        
@@ -1333,9 +1308,9 @@ int main(int argc, char **argv)
         BROCCOLI.SetCoarsestScaleT1MNI(COARSEST_SCALE);
         BROCCOLI.SetMMT1ZCUT(MM_T1_Z_CUT);   
 
-		BROCCOLI.SetTsigma(TSIGMA);
-		BROCCOLI.SetEsigma(ESIGMA);
-		BROCCOLI.SetDsigma(DSIGMA);
+		BROCCOLI.SetTsigma(SIGMA);
+		BROCCOLI.SetEsigma(SIGMA);
+		BROCCOLI.SetDsigma(SIGMA);
         
         BROCCOLI.SetOutputInterpolatedT1Volume(h_Interpolated_T1_Volume);
         BROCCOLI.SetOutputAlignedT1VolumeLinear(h_Aligned_T1_Volume);
@@ -1348,6 +1323,8 @@ int main(int argc, char **argv)
 		BROCCOLI.SetSaveInterpolatedT1(WRITE_INTERPOLATED);
 		BROCCOLI.SetSaveAlignedT1MNILinear(true);
 		BROCCOLI.SetSaveAlignedT1MNINonLinear(true);		
+
+		BROCCOLI.SetVerbose(VERBOS);
 
         if (WRITE_DISPLACEMENT_FIELD)
         {
@@ -1397,13 +1374,23 @@ int main(int argc, char **argv)
             }
         }
         
+        // Print create kernel errors
+        int* createKernelErrors = BROCCOLI.GetOpenCLCreateKernelErrors();
+        for (int i = 0; i < BROCCOLI.GetNumberOfOpenCLKernels(); i++)
+        {
+            if (createKernelErrors[i] != 0)
+            {
+                printf("Create kernel error for kernel '%s' is '%s' \n",BROCCOLI.GetOpenCLKernelName(i),BROCCOLI.GetOpenCLErrorMessage(createKernelErrors[i]));
+            }
+        } 
+
         // Print run kernel errors
         int* runKernelErrors = BROCCOLI.GetOpenCLRunKernelErrors();
         for (int i = 0; i < BROCCOLI.GetNumberOfOpenCLKernels(); i++)
         {
             if (runKernelErrors[i] != 0)
             {
-                printf("Run kernel error %i is %s \n",i,BROCCOLI.GetOpenCLErrorMessage(runKernelErrors[i]));
+                printf("Run kernel error for kernel '%s' is '%s' \n",BROCCOLI.GetOpenCLKernelName(i),BROCCOLI.GetOpenCLErrorMessage(runKernelErrors[i]));
             }
         } 
     }        

@@ -1,5 +1,5 @@
 /*
-    BROCCOLI: An Open Source Multi-Platform Software for Parallel Analysis of fMRI Data on Many-Core CPUs and GPUs
+    BROCCOLI: Software for Fast fMRI Analysis on Many-Core CPUs and GPUs
     Copyright (C) <2013>  Anders Eklund, andek034@gmail.com
 
     This program is free software: you can redistribute it and/or modify
@@ -129,6 +129,7 @@ class BROCCOLI_LIB
 		// Statistics
 		void SetTemporalDerivatives(int TD);
 		void SetRegressMotion(int R);
+		void SetRegressGlobalMean(int R);
 		void SetRegressConfounds(int R);
 		void SetPermuteFirstLevel(bool);
 		void SetConfoundRegressors(float* X_GLM);
@@ -187,6 +188,7 @@ class BROCCOLI_LIB
 		void SetEPIVoxelSizeY(float value);
 		void SetEPIVoxelSizeZ(float value);
 		void SetEPITR(float value);
+		void SetEPISliceOrder(int value);
 
 		void SetEPIWidth(int w);
 		void SetEPIHeight(int h);
@@ -381,14 +383,10 @@ class BROCCOLI_LIB
 
 		// Wrappers
 		void ChangeT1VolumeResolutionAndSizeWrapper();
-		void PerformRegistrationT1MNIWrapper();
-		void PerformRegistrationT1MNINoSkullstripWrapper();
 		void PerformRegistrationTwoVolumesWrapper();
 		void TransformVolumesNonLinearWrapper();
-		void PerformRegistrationEPIT1Wrapper();
 		void PerformSliceTimingCorrectionWrapper();
 		void PerformMotionCorrectionWrapper();
-		void PerformMotionCorrectionWrapperSeveralScales();
 		void PerformDetrending(cl_mem, cl_mem, int, int, int, int);
 		void PerformDetrendingAndMotionRegression(cl_mem, cl_mem, int, int, int, int);
 		void PerformSmoothingWrapper();
@@ -406,10 +404,6 @@ class BROCCOLI_LIB
 		void PerformFirstLevelAnalysisWrapper();
 		void PerformFirstLevelAnalysisBayesianWrapper();
 		void PerformSecondLevelAnalysisWrapper();
-
-		void ClusterizeOpenCLWrapper();
-		void ClusterizeOpenCLWrapper2();
-		void ClusterizeOpenCLWrapper3();
 
 		void GetOpenCLInfo();
 		bool OpenCLInitiate(cl_uint OPENCL_PLATFORM, cl_uint OPENCL_DEVICE);
@@ -485,6 +479,7 @@ class BROCCOLI_LIB
 		//------------------------------------------------
 		// Convolution functions
 		//------------------------------------------------
+
 		void CopyThreeQuadratureFiltersToConstantMemory(cl_mem c_Quadrature_Filter_1_Real, cl_mem c_Quadrature_Filter_1_Imag, cl_mem c_Quadrature_Filter_2_Real, cl_mem c_Quadrature_Filter_2_Imag, cl_mem c_Quadrature_Filter_3_Real, cl_mem c_Quadrature_Filter_3_Imag, float* h_Quadrature_Filter_1_Real, float* h_Quadrature_Filter_1_Imag, float* h_Quadrature_Filter_2_Real, float* h_Quadrature_Filter_2_Imag, float* h_Quadrature_Filter_3_Real, float* Quadrature_h_Filter_3_Imag, int z, int FILTER_SIZE);
 		void NonseparableConvolution3D(cl_mem d_q1, cl_mem d_q2, cl_mem d_q3, cl_mem d_Volume, cl_mem c_Filter_1_Real, cl_mem c_Filter_1_Imag, cl_mem c_Filter_2_Real, cl_mem c_Filter_2_Imag, cl_mem c_Filter_3_Real, cl_mem c_Filter_3_Imag, float* h_Filter_1_Real, float* h_Filter_1_Imag, float* h_Filter_2_Real, float* h_Filter_2_Imag, float* h_Filter_3_Real, float* h_Filter_3_Imag, int DATA_W, int DATA_H, int DATA_D);
 		void PerformSmoothing(cl_mem Smoothed_Volumes, cl_mem d_Volumes, float* h_Smoothing_Filter_X, float* h_Smoothing_Filter_Y, float* h_Smoothing_Filter_Z, int DATA_W, int DATA_H, int DATA_D, int DATA_T);
@@ -496,6 +491,7 @@ class BROCCOLI_LIB
 		//------------------------------------------------
 		// Functions for image registration
 		//------------------------------------------------
+
 		void AlignTwoVolumesLinearSetup(int DATA_W, int DATA_H, int DATA_D);
 		void AlignTwoVolumesLinear(float* h_Registration_Parameters, float* h_Rotations, int DATA_W, int DATA_H, int DATA_D, int NUMBER_OF_ITERATIONS, int ALIGNMENT_TYPE, int INTERPOLATION_MODE);
 		void AlignTwoVolumesLinearSeveralScales(float *h_Registration_Parameters, float* h_Rotations, cl_mem d_Al_Volume, cl_mem d_Ref_Volume, int DATA_W, int DATA_H, int DATA_D, int NUMBER_OF_SCALES, int NUMBER_OF_ITERATIONS, int ALIGNMENT_TYPE, int OVERWRITE, int INTERPOLATION_MODE);
@@ -524,6 +520,15 @@ class BROCCOLI_LIB
 		//------------------------------------------------
 		// Help functions
 		//------------------------------------------------
+
+		void ChangeVolumeResolutionAndSize(cl_mem d_New_Volume, cl_mem d_Volume, int DATA_W, int DATA_H, int DATA_D, int NEW_DATA_W, int NEW_DATA_H, int NEW_DATA_D, float VOXEL_SIZE_X, float VOXEL_SIZE_Y, float VOXEL_SIZE_Z, float NEW_VOXEL_SIZE_X, float NEW_VOXEL_SIZE_Y, float NEW_VOXEL_SIZE_Z, int INTERPOLATION_MODE);
+		void CalculateCenterOfMass(float &rx, float &ry, float &rz, cl_mem d_Volume, int DATA_W, int DATA_H, int DATA_D);
+		void CenterVolumeMass(cl_mem d_Volume, int DATA_W, int DATA_H, int DATA_D);
+		void CenterVolumeMass(cl_mem d_Volume, float* h_Parameters, int DATA_W, int DATA_H, int DATA_D);
+		void MatchVolumeMasses(cl_mem d_Volume_1, cl_mem d_Volume_2, int DATA_W, int DATA_H, int DATA_D);
+		void MatchVolumeMasses(cl_mem d_Volume_1, cl_mem d_Volume_2, float* h_Parameters, int DATA_W, int DATA_H, int DATA_D);
+
+		void CalculateGlobalMeans(cl_mem d_Volumes);		
 
 		void SetMemory(cl_mem memory, float value, int N);
 		void SetMemoryInt(cl_mem memory, int value, int N);
@@ -617,6 +622,10 @@ class BROCCOLI_LIB
 		cl_command_queue commandQueue;
 		cl_program program;
 		cl_device_id device;
+
+		cl_ulong localMemorySize;
+		size_t maxThreadsPerBlock;
+		size_t maxThreadsPerDimension[3];
 
 		std::string binaryFilename;
 		std::string device_info;
@@ -1023,6 +1032,7 @@ class BROCCOLI_LIB
 		int USE_TEMPORAL_DERIVATIVES;
 		bool RAW_REGRESSORS;
 		int REGRESS_MOTION;
+		int REGRESS_GLOBALMEAN;
 		int REGRESS_CONFOUNDS;
 		bool PERMUTE_FIRST_LEVEL;
 		float CLUSTER_DEFINING_THRESHOLD;
@@ -1086,9 +1096,15 @@ class BROCCOLI_LIB
 		float		 h_A_Matrix[144], h_h_Vector[12];
 		float		 *h_A_Matrix_Out, *h_h_Vector_Out;
 		double		 h_A_Matrix_double[144], h_h_Vector_double[12];
-		float 		 h_Registration_Parameters[12], h_Inverse_Registration_Parameters[12], h_Registration_Parameters_Old[12], h_Registration_Parameters_Temp[12], h_Registration_Parameters_EPI_T1_Affine[12], h_Registration_Parameters_EPI_T1_Translation[12], h_Registration_Parameters_EPI_T1_Rigid[12], h_Registration_Parameters_Motion_Correction[12], h_Registration_Parameters_T1_MNI[12], h_Registration_Parameters_EPI_MNI[12], *h_Registration_Parameters_T1_MNI_Out, h_Registration_Parameters_EPI_T1[6], *h_Registration_Parameters_EPI_T1_Out, *h_Registration_Parameters_EPI_MNI_Out;
+
+		float 		 h_Registration_Parameters[12], h_Inverse_Registration_Parameters[12], h_Registration_Parameters_Old[12], h_Registration_Parameters_Temp[12];
+		float		 h_StartParameters_EPI[12], h_StartParameters_EPI_T1[12];
+		float		 h_Registration_Parameters_EPI_T1_Affine[12], h_Registration_Parameters_EPI_T1_Translation[12], h_Registration_Parameters_EPI_T1_Rigid[12], h_Registration_Parameters_EPI_MNI[12], h_Registration_Parameters_EPI_T1[6], *h_Registration_Parameters_EPI_T1_Out, *h_Registration_Parameters_EPI_MNI_Out;
+		float		 h_Registration_Parameters_Motion_Correction[12];
+		float		 h_Registration_Parameters_T1_MNI[12], *h_Registration_Parameters_T1_MNI_Out; 
 		double       h_Registration_Parameters_double[12];
 		float		 h_Rotations[3], h_Rotations_Temp[3];
+
 		float       *h_Phase_Differences, *h_Phase_Certainties, *h_Phase_Gradients;
 
 		float		*h_t11, *h_t12, *h_t13, *h_t22, *h_t23, *h_t33;
@@ -1122,6 +1138,7 @@ class BROCCOLI_LIB
 		float       *h_Contrasts, *h_Contrasts_In;
 		float		*h_X_GLM_Out, *h_X_GLM_In, *h_X_GLM_Confounds, *h_xtxxt_GLM_In, *h_ctxtxc_GLM_In;
 		float		*h_X_GLM, *h_X_GLM_With_Temporal_Derivatives, *h_X_GLM_Convolved, *h_xtxxt_GLM, *h_xtxxt_GLM_Out, *h_ctxtxc_GLM;
+		float 		*h_Global_Mean;
 		float		*h_Censored_Timepoints, *h_Censored_Volumes;
 		float       *h_Beta_Volumes_MNI, *h_Beta_Volumes_EPI, *h_Beta_Volumes_T1;
 		float       *h_Beta_Volumes_No_Whitening_MNI, *h_Beta_Volumes_No_Whitening_EPI, *h_Beta_Volumes_No_Whitening_T1;
